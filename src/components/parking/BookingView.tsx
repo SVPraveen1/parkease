@@ -1,4 +1,3 @@
-
 import { Button } from "@/components/ui/button";
 import { ParkingMap } from "@/components/parking/ParkingMap";
 import { ParkingSlotData } from "@/components/parking/ParkingMap";
@@ -67,7 +66,7 @@ export const BookingView = ({
         
         <div>
           <BookingForm 
-            selectedSlotId={selectedSlot?.slotId || null}
+            selectedSlotId={selectedSlotId}
             parkingLocationName={selectedLocation.name}
             onBookingComplete={onBookingComplete}
           />

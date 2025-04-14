@@ -8,38 +8,24 @@ import { Button } from "@/components/ui/button";
 import { Loader2, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ParkingService } from "@/services/ParkingService";
+import type { Database } from "@/integrations/supabase/types";
 
-interface DbBooking {
-  id: string;
-  start_time: string;
-  duration: number;
-  slot_id: string;
-  status: "upcoming" | "active";
-  vehicle_number: string;
-  parking_slot?: {
-    number: string;
-    location_name: string;  // Add location name to the type
-  };
-}
+type BookingDetail = Database['public']['Tables']['booking_details']['Row'];
 
-const transformBooking = (booking: DbBooking): BookingData => {
-  const startDate = new Date(booking.start_time);
-  const endDate = new Date(startDate.getTime() + booking.duration * 60000);
-
-  // Calculate price based on duration (base rate: $6 per hour)
-  const durationHours = booking.duration / 60;
-  const price = Math.max(6 * durationHours, 6);
+const transformBooking = (bookingDetail: BookingDetail): BookingData => {
+  const startDate = new Date(bookingDetail.start_time);
+  const endDate = new Date(startDate.getTime() + bookingDetail.duration * 60000);
 
   return {
-    id: booking.id,
-    parkingLot: booking.parking_slot?.location_name || "Parking Location",
-    slotId: booking.parking_slot?.number || booking.slot_id,
+    id: bookingDetail.booking_id,
+    locationName: bookingDetail.location_name,
+    slotId: bookingDetail.slot_number,
     date: startDate.toLocaleDateString(),
     startTime: startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     endTime: endDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    price: price,
-    status: booking.status,
-    vehicleNumber: booking.vehicle_number
+    price: bookingDetail.price,
+    status: bookingDetail.status as "upcoming" | "active",
+    vehicleNumber: bookingDetail.vehicle_number
   };
 };
 
@@ -83,19 +69,8 @@ const BookingsPage = () => {
       setError(null);
       
       const { data, error } = await supabase
-        .from("bookings")
-        .select(`
-          id,
-          start_time,
-          duration,
-          slot_id,
-          status,
-          vehicle_number,
-          parking_slot:slot_id (
-            number,
-            location_name
-          )
-        `)
+        .from("booking_details")
+        .select("*")
         .eq("user_id", user?.id)
         .order("start_time", { ascending: true });
         
@@ -104,7 +79,7 @@ const BookingsPage = () => {
       }
 
       const now = new Date();
-      const filteredBookings = (data as DbBooking[] || []).filter(booking => {
+      const filteredBookings = (data as BookingDetail[] || []).filter(booking => {
         const startTime = new Date(booking.start_time);
         const endTime = new Date(startTime.getTime() + booking.duration * 60000);
 
@@ -129,6 +104,17 @@ const BookingsPage = () => {
   
   const handleCancelBooking = async (id: string) => {
     try {
+      // First delete from booking_details
+      const { error: detailsError } = await supabase
+        .from("booking_details")
+        .delete()
+        .eq("booking_id", id);
+        
+      if (detailsError) {
+        throw detailsError;
+      }
+
+      // Then delete from bookings
       const { error } = await supabase
         .from("bookings")
         .delete()
@@ -148,12 +134,17 @@ const BookingsPage = () => {
   
   const handleCompleteBooking = async (id: string) => {
     try {
-      // Find the booking to check its end time
-      const booking = bookings.find(b => b.id === id);
-      if (!booking) {
-        throw new Error("Booking not found");
+      // First delete from booking_details
+      const { error: detailsError } = await supabase
+        .from("booking_details")
+        .delete()
+        .eq("booking_id", id);
+        
+      if (detailsError) {
+        throw detailsError;
       }
 
+      // Then delete from bookings
       const { error } = await supabase
         .from("bookings")
         .delete()
@@ -163,7 +154,6 @@ const BookingsPage = () => {
         throw error;
       }
       
-      // Remove the booking from the state immediately
       setBookings(prevBookings => prevBookings.filter(booking => booking.id !== id));
       await fetchBookings(); // Refresh the list to ensure sync
       toast.success("Booking marked as completed");

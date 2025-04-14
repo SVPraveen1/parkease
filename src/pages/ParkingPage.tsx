@@ -54,9 +54,12 @@ const ParkingPage = () => {
   };
   
   const fetchParkingSlots = async () => {
+    if (!selectedLocation) return;
+    
     setIsLoadingSlots(true);
     try {
-      const slots = await ParkingService.fetchParkingSlots();
+      // Pass the selected location's ID to filter slots
+      const slots = await ParkingService.fetchParkingSlots(selectedLocation.id);
       setParkingSlots(slots);
     } finally {
       setIsLoadingSlots(false);

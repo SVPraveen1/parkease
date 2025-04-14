@@ -50,8 +50,89 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "parking_slots"
             referencedColumns: ["id"]
-          },
+          }
         ]
+      }
+      booking_details: {
+        Row: {
+          id: string
+          booking_id: string
+          user_id: string
+          location_name: string
+          slot_number: string
+          start_time: string
+          duration: number
+          status: string
+          vehicle_number: string
+          price: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          booking_id: string
+          user_id: string
+          location_name: string
+          slot_number: string
+          start_time: string
+          duration: number
+          status: string
+          vehicle_number: string
+          price: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          booking_id?: string
+          user_id?: string
+          location_name?: string
+          slot_number?: string
+          start_time?: string
+          duration?: number
+          status?: string
+          vehicle_number?: string
+          price?: number
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_details_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_details_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      locations: {
+        Row: {
+          id: string
+          name: string
+          address: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          address: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          address?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       parking_slots: {
         Row: {
@@ -59,20 +140,31 @@ export type Database = {
           id: string
           is_active: boolean | null
           number: string
+          location_id: string | null
         }
         Insert: {
           created_at?: string | null
           id?: string
           is_active?: boolean | null
           number: string
+          location_id?: string | null
         }
         Update: {
           created_at?: string | null
           id?: string
           is_active?: boolean | null
           number?: string
+          location_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "parking_slots_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       profiles: {
         Row: {
@@ -83,7 +175,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
-          id: string
+          id?: string
           name?: string | null
           updated_at?: string | null
         }

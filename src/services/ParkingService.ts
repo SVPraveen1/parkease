@@ -3,13 +3,29 @@ import { toast } from "sonner";
 import { ParkingSlotData } from "@/components/parking/ParkingMap";
 
 export const ParkingService = {
-  fetchParkingSlots: async (): Promise<ParkingSlotData[]> => {
+  fetchParkingSlots: async (locationId?: string): Promise<ParkingSlotData[]> => {
     try {
-      // Get all active slots
-      const { data: slotsData, error: slotsError } = await supabase
+      // Build query with location filter if provided
+      let query = supabase
         .from("parking_slots")
-        .select("*")
+        .select(`
+          id,
+          number,
+          is_active,
+          location:location_id (
+            id,
+            name,
+            address
+          )
+        `)
         .eq("is_active", true);
+
+      // Add location filter if provided
+      if (locationId) {
+        query = query.eq("location_id", locationId);
+      }
+
+      const { data: slotsData, error: slotsError } = await query;
 
       if (slotsError) {
         throw slotsError;
@@ -36,9 +52,7 @@ export const ParkingService = {
             const endTime = new Date(startTime.getTime() + booking.duration * 60 * 1000);
             const now = new Date();
             
-            // Update booking status based on time
             if (now >= startTime && now <= endTime) {
-              // Update booking to active if it's currently upcoming
               if (booking.status === "upcoming") {
                 supabase
                   .from("bookings")
@@ -49,28 +63,28 @@ export const ParkingService = {
                   });
               }
               bookedSlotIds.add(booking.slot_id);
-            } else if (now > endTime) {
-              // Remove expired bookings and make slots available
-              supabase
-                .from("bookings")
-                .delete()
-                .eq("id", booking.id)
-                .then(({ error }) => {
-                  if (error) console.error("Error removing expired booking:", error);
-                });
-            } else if (now < startTime) {
-              // Future bookings should still mark the slot as booked
-              bookedSlotIds.add(booking.slot_id);
             }
           });
         }
 
-        // Transform slot data with status
-        const transformedSlots: ParkingSlotData[] = slotsData.map((slot) => ({
-          id: slot.number,
-          status: bookedSlotIds.has(slot.id) ? "booked" : "available",
-          slotId: slot.id
-        }));
+        // Transform slot data with status and location info
+        const transformedSlots: ParkingSlotData[] = slotsData.map((slot) => {
+          const slotNumber = `Slot ${String(slot.number).padStart(2, '0')}`;
+          
+          if (!slot.location) {
+            console.error(`No location found for slot ${slotNumber}`);
+          }
+
+          return {
+            id: slotNumber,
+            status: bookedSlotIds.has(slot.id) ? "booked" : "available",
+            slotId: slot.id.toString(),
+            location: {
+              name: slot.location?.name || "Unknown Location",
+              address: slot.location?.address || "Address not available"
+            }
+          };
+        });
         
         return transformedSlots;
       }
@@ -85,7 +99,8 @@ export const ParkingService = {
 
   validateSlotAvailability: async (slotId: string, startTime: string, duration: number): Promise<boolean> => {
     try {
-      const endTime = new Date(new Date(startTime).getTime() + duration * 60 * 1000).toISOString();
+      const newStartTime = new Date(startTime);
+      const newEndTime = new Date(newStartTime.getTime() + duration * 60 * 1000);
       
       // Check for any overlapping bookings
       const { data: bookings, error } = await supabase
@@ -93,13 +108,31 @@ export const ParkingService = {
         .select("*")
         .eq("slot_id", slotId)
         .in("status", ["upcoming", "active"])
-        .or(`start_time.lte.${endTime},end_time.gte.${startTime}`);
+        .or(
+          `start_time.gte.${newStartTime.toISOString()},start_time.lt.${newEndTime.toISOString()}`
+        );
 
       if (error) {
         throw error;
       }
 
-      return !bookings || bookings.length === 0;
+      // Also check if any existing booking's end time overlaps with our time slot
+      if (bookings) {
+        for (const booking of bookings) {
+          const existingStartTime = new Date(booking.start_time);
+          const existingEndTime = new Date(existingStartTime.getTime() + booking.duration * 60 * 1000);
+          
+          // Check if there's any overlap
+          if (
+            (newStartTime <= existingEndTime && newEndTime >= existingStartTime) ||
+            (existingStartTime <= newEndTime && existingEndTime >= newStartTime)
+          ) {
+            return false;
+          }
+        }
+      }
+
+      return true;
     } catch (error) {
       console.error("Error validating slot availability:", error);
       return false;

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 
 export interface LocationInfo {
+  id: string;
   lat: number;
   lng: number;
   name: string;

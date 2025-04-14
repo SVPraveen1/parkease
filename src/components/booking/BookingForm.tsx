@@ -11,6 +11,10 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/context/AuthContext";
+import { ParkingService } from "@/services/ParkingService";
+import type { Database } from "@/integrations/supabase/types";
+
+type BookingDetail = Database['public']['Tables']['booking_details']['Insert'];
 
 interface BookingFormProps {
   selectedSlotId: string | null;
@@ -31,41 +35,36 @@ export const BookingForm = ({
   const { user } = useAuth();
   
   // Calculate price based on duration (simple implementation)
-  const calculatePrice = () => {
-    const startHour = parseInt(startTime.split(':')[0]);
-    const endHour = parseInt(endTime.split(':')[0]);
-    const durationHours = endHour - startHour;
-    
+  const calculatePrice = (durationHours: number) => {
     // Base rate: $6 per hour
     return Math.max(6 * durationHours, 6);
   };
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!selectedSlotId) {
-      toast.error("Please select a parking slot");
-      return;
-    }
-
-    if (!user) {
-      toast.error("You need to be logged in to book a slot");
-      return;
-    }
-
-    if (!vehicleNumber) {
-      toast.error("Please enter your vehicle registration number");
-      return;
-    }
-
-    if (!date) {
-      toast.error("Please select a date");
-      return;
-    }
-    
     setIsLoading(true);
     
     try {
+      if (!selectedSlotId) {
+        toast.error("Please select a parking slot");
+        return;
+      }
+
+      if (!user) {
+        toast.error("You need to be logged in to book a slot");
+        return;
+      }
+
+      if (!vehicleNumber) {
+        toast.error("Please enter your vehicle registration number");
+        return;
+      }
+
+      if (!date) {
+        toast.error("Please select a date");
+        return;
+      }
+
       // Format the date and time for the database
       const bookingDate = new Date(date);
       const [hours, minutes] = startTime.split(':').map(Number);
@@ -77,35 +76,66 @@ export const BookingForm = ({
       const endHour = parseInt(endTime.split(':')[0]);
       const durationMinutes = (endHour - startHour) * 60;
       
-      // Debug log
-      console.log('Booking data:', {
-        user_id: user?.id,
-        slot_id: selectedSlotId,
-        start_time: bookingDate.toISOString(),
-        duration: durationMinutes,
-        vehicle_number: vehicleNumber,
-        status: 'upcoming'
-      });
+      // Check slot availability first
+      const isAvailable = await ParkingService.validateSlotAvailability(
+        selectedSlotId,
+        bookingDate.toISOString(),
+        durationMinutes
+      );
 
-      // Insert booking into Supabase with the correct status value
-      const { data, error } = await supabase.from('bookings').insert({
-        user_id: user?.id,
-        slot_id: selectedSlotId,
-        start_time: bookingDate.toISOString(),
-        duration: durationMinutes,
-        vehicle_number: vehicleNumber,
-        status: 'upcoming'
-      });
-      
-      if (error) {
-        throw error;
+      if (!isAvailable) {
+        toast.error("This slot is not available for the selected time period");
+        return;
       }
-      
+
+      // First create the booking
+      const { data: bookingData, error: bookingError } = await supabase
+        .from("bookings")
+        .insert({
+          user_id: user.id,
+          slot_id: selectedSlotId,
+          start_time: bookingDate.toISOString(),
+          duration: durationMinutes,
+          status: "upcoming",
+          vehicle_number: vehicleNumber
+        })
+        .select()
+        .single();
+        
+      if (bookingError) throw bookingError;
+
+      // Calculate price
+      const price = calculatePrice(durationMinutes / 60);
+
+      // Then store the complete booking details
+      const { error: detailsError } = await supabase
+        .from("booking_details")
+        .insert({
+          booking_id: bookingData.id,
+          user_id: user.id,
+          location_name: parkingLocationName || "",
+          slot_number: selectedSlotId,
+          start_time: bookingDate.toISOString(),
+          duration: durationMinutes,
+          status: "upcoming",
+          vehicle_number: vehicleNumber,
+          price: price
+        } satisfies BookingDetail);
+
+      if (detailsError) {
+        // If storing details fails, rollback the booking
+        await supabase
+          .from("bookings")
+          .delete()
+          .eq("id", bookingData.id);
+        throw detailsError;
+      }
+
       toast.success("Booking confirmed!");
       onBookingComplete();
-    } catch (error: any) {
-      console.error("Error booking slot:", error);
-      toast.error(error.message || "Failed to complete booking. Please try again.");
+    } catch (err: any) {
+      console.error("Error booking slot:", err);
+      toast.error(err.message || "Failed to complete booking. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -117,7 +147,7 @@ export const BookingForm = ({
       
       <div className="space-y-2">
         <Label>Selected Slot</Label>
-        <Input value={selectedSlotId || "No slot selected"} readOnly />
+        <Input value={selectedSlotId ? `Slot ${selectedSlotId}` : "No slot selected"} readOnly className="bg-gray-50" />
       </div>
 
       {parkingLocationName && (
@@ -209,7 +239,7 @@ export const BookingForm = ({
       
       <div className="space-y-2">
         <Label>Total Price</Label>
-        <div className="text-xl font-semibold">${calculatePrice().toFixed(2)}</div>
+        <div className="text-xl font-semibold">${calculatePrice((parseInt(endTime.split(':')[0]) - parseInt(startTime.split(':')[0]))).toFixed(2)}</div>
       </div>
       
       <Button type="submit" className="w-full" disabled={!selectedSlotId || isLoading}>
