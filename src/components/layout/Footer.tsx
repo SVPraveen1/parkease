@@ -32,7 +32,7 @@ export const Footer = () => {
               <li className="text-parkblue-100">123 Parking Street</li>
               <li className="text-parkblue-100">City Center, 10001</li>
               <li className="text-parkblue-100">support@parkease.com</li>
-              <li className="text-parkblue-100">(123) 456-7890</li>
+              <li className="text-parkblue-100">9999 999 999</li>
             </ul>
           </div>
         </div>
