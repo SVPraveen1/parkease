@@ -56,10 +56,9 @@ export const BookingCard = ({ booking, onCancel, onComplete }: BookingCardProps)
         <div className="flex justify-between text-sm">
           <span className="text-gray-600">Vehicle:</span>
           <span className="font-medium">{booking.vehicleNumber}</span>
-        </div>
-        <div className="flex justify-between text-sm">
+        </div>        <div className="flex justify-between text-sm">
           <span className="text-gray-600">Price:</span>
-          <span className="font-medium">${booking.price.toFixed(2)}</span>
+          <span className="font-medium">₹{booking.price.toFixed(2)}</span>
         </div>
       </div>
 

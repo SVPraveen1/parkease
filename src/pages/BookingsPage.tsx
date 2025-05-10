@@ -41,19 +41,18 @@ const BookingsPage = () => {
       fetchBookings();
     }
   }, [user, activeTab]);
-
   // Set up periodic check for booking status updates
   useEffect(() => {
     let intervalId: number;
 
     if (user) {
-      // Initial cleanup and fetch
-      ParkingService.cleanupExpiredBookings().then(() => fetchBookings());
+      // Initial fetch
+      fetchBookings();
 
-      // Check booking statuses every minute
+      // Check booking statuses every 30 seconds
       intervalId = window.setInterval(() => {
-        ParkingService.cleanupExpiredBookings().then(() => fetchBookings());
-      }, 60000); // 1 minute interval
+        fetchBookings();
+      }, 30000); // 30 second interval
     }
 
     return () => {
@@ -62,16 +61,15 @@ const BookingsPage = () => {
       }
     };
   }, [user]);
-  
-  const fetchBookings = async () => {
+    const fetchBookings = async () => {
     try {
       setIsLoading(true);
       setError(null);
-      
-      const { data, error } = await supabase
+        const { data, error } = await supabase
         .from("booking_details")
         .select("*")
         .eq("user_id", user?.id)
+        .in("status", ["upcoming", "active"])
         .order("start_time", { ascending: true });
         
       if (error) {
@@ -79,14 +77,63 @@ const BookingsPage = () => {
       }
 
       const now = new Date();
-      const filteredBookings = (data as BookingDetail[] || []).filter(booking => {
+      const updatedBookings: BookingDetail[] = [];
+      
+      // Process each booking and update status if needed
+      for (const booking of (data as BookingDetail[] || [])) {
         const startTime = new Date(booking.start_time);
         const endTime = new Date(startTime.getTime() + booking.duration * 60000);
-
+          // Determine the correct status or if booking should be removed
+        const now = new Date();
+        
+        // If the booking has completely passed its end time
+        if (now > endTime) {
+          // Remove expired booking
+          await supabase
+            .from("booking_details")
+            .delete()
+            .eq("booking_id", booking.booking_id);
+            
+          await supabase
+            .from("bookings")
+            .delete()
+            .eq("id", booking.booking_id);
+          
+          continue; // Skip this booking
+        }
+        
+        // If booking is currently active
+        if (now >= startTime && now <= endTime) {
+          // Update the status in database if it's not already active
+          if (booking.status !== "active") {
+            await supabase
+              .from("booking_details")
+              .update({ status: "active" })
+              .eq("booking_id", booking.booking_id);
+            
+            await supabase
+              .from("bookings")
+              .update({ status: "active" })
+              .eq("id", booking.booking_id);
+          }
+          
+          updatedBookings.push({
+            ...booking,
+            status: "active"
+          });
+        } 
+        // If booking is truly upcoming (start time is in the future)
+        else if (startTime > now) {
+          updatedBookings.push({
+            ...booking,
+            status: "upcoming"
+          });
+        }
+      }      const filteredBookings = updatedBookings.filter(booking => {
         if (activeTab === "upcoming") {
-          return startTime > now;
+          return booking.status === "upcoming";
         } else if (activeTab === "active") {
-          return startTime <= now && endTime > now;
+          return booking.status === "active";
         }
         return false;
       });

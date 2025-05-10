@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { format, addHours } from "date-fns";
-import { Calendar as CalendarIcon, Clock } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, Loader2 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -33,11 +33,19 @@ export const BookingForm = ({
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
-  
-  // Calculate price based on duration (simple implementation)
+    // Calculate price based on duration (simple implementation)
   const calculatePrice = (durationHours: number) => {
-    // Base rate: $6 per hour
-    return Math.max(6 * durationHours, 6);
+    // Base rate: ₹100 per hour
+    return Math.max(100 * durationHours, 100);
+  };
+
+  // Calculate the current price based on selected duration
+  const calculateCurrentPrice = () => {
+    if (!startTime || !endTime) return 0;
+    const startHour = parseInt(startTime.split(':')[0]);
+    const endHour = parseInt(endTime.split(':')[0]);
+    const durationHours = endHour - startHour;
+    return calculatePrice(durationHours);
   };
   
   const handleSubmit = async (e: React.FormEvent) => {
@@ -199,13 +207,13 @@ export const BookingForm = ({
             <SelectContent>
               {Array.from({ length: 13 }, (_, i) => i + 8).map((hour) => (
                 <SelectItem key={hour} value={`${hour}:00`}>
-                  {hour}:00 {hour < 12 ? "AM" : "PM"}
+                  {`${hour}:00`}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
-        
+
         <div className="space-y-2">
           <Label>End Time</Label>
           <Select value={endTime} onValueChange={setEndTime}>
@@ -213,38 +221,43 @@ export const BookingForm = ({
               <SelectValue placeholder="Select time" />
             </SelectTrigger>
             <SelectContent>
-              {Array.from({ length: 13 }, (_, i) => i + 9).map((hour) => (
-                <SelectItem 
-                  key={hour} 
-                  value={`${hour}:00`}
-                  disabled={hour <= parseInt(startTime.split(':')[0])}
-                >
-                  {hour}:00 {hour < 12 ? "AM" : "PM"}
+              {Array.from({ length: 13 }, (_, i) => i + parseInt(startTime.split(':')[0]) + 1)
+                .filter(hour => hour <= 21)
+                .map((hour) => (
+                <SelectItem key={hour} value={`${hour}:00`}>
+                  {`${hour}:00`}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
       </div>
-      
+
       <div className="space-y-2">
-        <Label>Vehicle Registration</Label>
-        <Input 
-          placeholder="e.g. ABC123" 
+        <Label>Vehicle Number</Label>
+        <Input
+          placeholder="Enter vehicle registration number"
           value={vehicleNumber}
-          onChange={(e) => setVehicleNumber(e.target.value)}
-          required
+          onChange={(e) => setVehicleNumber(e.target.value.toUpperCase())}
         />
       </div>
-      
-      <div className="space-y-2">
-        <Label>Total Price</Label>
-        <div className="text-xl font-semibold">${calculatePrice((parseInt(endTime.split(':')[0]) - parseInt(startTime.split(':')[0]))).toFixed(2)}</div>
+
+      <div className="pt-4 border-t mt-4">
+        <div className="flex justify-between items-center mb-4">
+          <span className="text-sm font-medium text-gray-600">Total Price:</span>
+          <span className="text-lg font-semibold text-primary">₹{calculateCurrentPrice()}</span>
+        </div>
+        <Button type="submit" className="w-full" disabled={isLoading}>
+          {isLoading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Confirming Booking
+            </>
+          ) : (
+            'Confirm Booking'
+          )}
+        </Button>
       </div>
-      
-      <Button type="submit" className="w-full" disabled={!selectedSlotId || isLoading}>
-        {isLoading ? "Processing..." : "Confirm Booking"}
-      </Button>
     </form>
   );
 };
